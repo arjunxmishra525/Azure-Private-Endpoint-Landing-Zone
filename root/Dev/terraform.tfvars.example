@@ -1,0 +1,175 @@
+# ==============================================================================
+# EXAMPLE NESTED MAP / DICTIONARY TFVARS
+# ==============================================================================
+
+resource_groups = {
+  "rg_hub_spoke" = {
+    name     = "rg-hubspoke-storage-prod"
+    location = "eastus"
+    tags = {
+      Environment = "Production"
+      ManagedBy   = "Terraform"
+      Topology    = "Hub-and-Spoke"
+    }
+  }
+}
+
+vnets = {
+  "hub_vnet" = {
+    name                = "vnet-hub"
+    resource_group_name = "rg-hubspoke-storage-prod"
+    location            = "eastus"
+    address_space       = ["10.0.0.0/16"]
+    tags = {
+      NetworkRole = "Hub"
+      Environment = "Production"
+    }
+  }
+  "spoke_vnet" = {
+    name                = "vnet-spoke"
+    resource_group_name = "rg-hubspoke-storage-prod"
+    location            = "eastus"
+    address_space       = ["10.1.0.0/16"]
+    tags = {
+      NetworkRole = "Spoke-Workload"
+      Environment = "Production"
+    }
+  }
+}
+
+subnets = {
+  "hub_mgmt" = {
+    name                 = "snet-hub-mgmt"
+    resource_group_name  = "rg-hubspoke-storage-prod"
+    virtual_network_name = "vnet-hub"
+    address_prefixes     = ["10.0.1.0/24"]
+  }
+  "hub_pe" = {
+    name                 = "snet-hub-private-endpoints"
+    resource_group_name  = "rg-hubspoke-storage-prod"
+    virtual_network_name = "vnet-hub"
+    address_prefixes     = ["10.0.2.0/24"]
+  }
+  "spoke_workload" = {
+    name                 = "snet-spoke-workload"
+    resource_group_name  = "rg-hubspoke-storage-prod"
+    virtual_network_name = "vnet-spoke"
+    address_prefixes     = ["10.1.1.0/24"]
+  }
+}
+
+vnet_peerings = {
+  "hub_to_spoke" = {
+    name                         = "peer-hub-to-spoke"
+    resource_group_name          = "rg-hubspoke-storage-prod"
+    virtual_network_name         = "vnet-hub"
+    remote_virtual_network_name  = "vnet-spoke"
+    allow_virtual_network_access = true
+    allow_forwarded_traffic      = true
+  }
+  "spoke_to_hub" = {
+    name                         = "peer-spoke-to-hub"
+    resource_group_name          = "rg-hubspoke-storage-prod"
+    virtual_network_name         = "vnet-spoke"
+    remote_virtual_network_name  = "vnet-hub"
+    allow_virtual_network_access = true
+    allow_forwarded_traffic      = true
+  }
+}
+
+storage_accounts = {
+  "sa_blob" = {
+    name                          = "stghubprod01"
+    use_random_suffix             = true
+    resource_group_name           = "rg-hubspoke-storage-prod"
+    location                      = "eastus"
+    account_tier                  = "Standard"
+    account_replication_type      = "LRS"
+    account_kind                  = "StorageV2"
+    min_tls_version               = "TLS1_2"
+    public_network_access_enabled = false
+    tags = {
+      Service     = "BlobStorage"
+      Role        = "CentralDataStore"
+      Environment = "Production"
+    }
+    containers = {
+      "data" = {
+        name                  = "democontainer"
+        container_access_type = "private"
+      }
+    }
+  }
+}
+
+private_dns_zones = {
+  "blob_dns" = {
+    name                = "privatelink.blob.core.windows.net"
+    resource_group_name = "rg-hubspoke-storage-prod"
+    linked_vnets        = ["vnet-hub", "vnet-spoke"]
+    tags = {
+      Service     = "PrivateDNS"
+      Environment = "Production"
+    }
+    a_records = {
+      "stg_blob_pe_record" = {
+        name       = "stghubprod01"
+        ip_address = "10.0.2.4"
+        ttl        = 300
+        tags = {
+          RecordType = "StoragePrivateEndpoint"
+        }
+      }
+    }
+  }
+}
+
+dns_a_records = {}
+
+private_endpoints = {
+  "pe_blob" = {
+    name                 = "pe-stghub-blob"
+    resource_group_name  = "rg-hubspoke-storage-prod"
+    location             = "eastus"
+    virtual_network_name = "vnet-hub"
+    subnet_name          = "snet-hub-private-endpoints"
+    storage_account_key  = "sa_blob"
+    subresource_names    = ["blob"]
+    private_dns_zone_key = "blob_dns"
+    dns_zone_group_name  = "blob-dns-zone-group"
+    tags = {
+      Service     = "PrivateLink"
+      Environment = "Production"
+    }
+  }
+}
+
+windows_vms = {
+  "spoke_vm01" = {
+    name                 = "vm-spoke-win01"
+    resource_group_name  = "rg-hubspoke-storage-prod"
+    location             = "eastus"
+    virtual_network_name = "vnet-spoke"
+    subnet_name          = "snet-spoke-workload"
+    vm_size              = "Standard_B2ats_v2"
+    admin_username       = "azureuser"
+    admin_password       = null
+    enable_public_ip     = true
+    allowed_rdp_cidr     = "*"
+    os_disk = {
+      caching              = "ReadWrite"
+      storage_account_type = "StandardSSD_LRS"
+    }
+    image = {
+      publisher = "MicrosoftWindowsServer"
+      offer     = "WindowsServer"
+      sku       = "2022-datacenter-azure-edition"
+      version   = "latest"
+    }
+    tags = {
+      Role        = "WorkloadVM"
+      Environment = "Production"
+    }
+  }
+}
+
